@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, Trophy, RefreshCcw, Plus, Trash2, Play, X, Gamepad2 } from 'lucide-react';
+import { Heart, Trophy, RefreshCcw, Plus, Trash2, Play, X, Gamepad2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
@@ -24,8 +24,6 @@ try {
 } catch (e) {
   console.log("Firebase setup warning: Please add configuration to share leaderboards online.", e);
 }
-
-const wrapCoord = (val, max) => ((val % max) + max) % max;
 
 const getTile = (mapArr, r, c) => {
   if (!mapArr || mapArr.length === 0) return 1;
@@ -65,7 +63,7 @@ const GHOST_SPEED = 2;
 export default function App() {
   const canvasRef = useRef(null);
   const [uiState, setUiState] = useState('menu'); 
-  const prevUiState = useRef('menu'); // שומר את המצב הקודם כדי לדעת לאן לחזור
+  const prevUiState = useRef('menu'); 
   
   const [user, setUser] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -73,7 +71,6 @@ export default function App() {
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [hasSubmittedScore, setHasSubmittedScore] = useState(false);
 
-  // מילים ריקות לחלוטין כברירת מחדל (10 שורות)
   const [customWords, setCustomWords] = useState(
     Array.from({ length: 10 }, () => ({ en: '', he: '' }))
   );
@@ -304,7 +301,6 @@ export default function App() {
   };
 
   const closeLeaderboard = () => {
-    // אם נפסלנו או ניצחנו קודם, נחזור לתפריט, אחרת נחזור למצב הקודם (כמו השהייה)
     if (prevUiState.current === 'gameover' || prevUiState.current === 'won') {
       setUiState('menu');
     } else {
@@ -365,8 +361,15 @@ export default function App() {
         }
       }
 
-      pacman.x = wrapCoord(pacman.x + pacman.dx * pacman.speed, canvas.width);
-      pacman.y = wrapCoord(pacman.y + pacman.dy * pacman.speed, canvas.height);
+      // תזוזת הפקמן וטיפול עטיפה מדויק שמונע היתקעות בחור שחור
+      pacman.x += pacman.dx * pacman.speed;
+      pacman.y += pacman.dy * pacman.speed;
+
+      if (pacman.x <= -TILE_SIZE) pacman.x = canvas.width - TILE_SIZE;
+      else if (pacman.x >= canvas.width) pacman.x = 0;
+
+      if (pacman.y <= -TILE_SIZE) pacman.y = canvas.height - TILE_SIZE;
+      else if (pacman.y >= canvas.height) pacman.y = 0;
 
       if (state.dotsRemaining <= 0) {
         setUiState('won');
@@ -424,8 +427,14 @@ export default function App() {
           g.dy = move[1];
         }
 
-        g.x = wrapCoord(g.x + g.dx * g.speed, canvas.width);
-        g.y = wrapCoord(g.y + g.dy * g.speed, canvas.height);
+        g.x += g.dx * g.speed;
+        g.y += g.dy * g.speed;
+
+        if (g.x <= -TILE_SIZE) g.x = canvas.width - TILE_SIZE;
+        else if (g.x >= canvas.width) g.x = 0;
+
+        if (g.y <= -TILE_SIZE) g.y = canvas.height - TILE_SIZE;
+        else if (g.y >= canvas.height) g.y = 0;
       }
 
       draw(ctx, state);
@@ -442,7 +451,6 @@ export default function App() {
           let tileY = y * TILE_SIZE;
           
           if (state.map[y][x] === 1) {
-            // קירות בסגנון ניאון ארקייד
             ctx.fillStyle = '#1e3a8a';
             ctx.strokeStyle = '#3b82f6';
             ctx.lineWidth = 1;
@@ -461,7 +469,7 @@ export default function App() {
             let radius = 6 + Math.sin(Date.now() / 150) * 1.5;
             ctx.arc(tileX + TILE_SIZE/2, tileY + TILE_SIZE/2, radius, 0, Math.PI*2);
             ctx.fill();
-            ctx.shadowBlur = 0; // איפוס
+            ctx.shadowBlur = 0;
           }
         }
       }
@@ -545,6 +553,15 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [uiState]);
 
+  // פונקציית לחיצה לג'ויסטיק המובייל החדש
+  const handleJoystick = (dx, dy) => {
+    if (uiState !== 'playing') return;
+    const p = gameRef.current.pacman;
+    p.nextDx = dx;
+    p.nextDy = dy;
+  };
+
+  // מנגנון ה-Swipe למובייל נשאר כגיבוי, אבל עכשיו זה בטוח ולא עושה ריפרש
   const touchStartRef = useRef(null);
   const handleTouchStart = (e) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -568,75 +585,77 @@ export default function App() {
 
 
   return (
-    <div dir="rtl" className="min-h-screen bg-black flex flex-col items-center justify-center font-mono text-green-400 p-4 relative overflow-hidden">
+    // תוספת ה-touch-none חשובה: היא מונעת מהדפדפן לעשות גלילה או Pull-to-refresh בזמן משחק
+    <div dir="rtl" className={`min-h-screen bg-black flex flex-col items-center justify-center font-mono text-green-400 p-2 sm:p-4 relative overflow-hidden ${uiState === 'playing' ? 'touch-none' : ''}`}>
       
       {/* Scanline CRT overlay effect */}
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] z-50 opacity-40"></div>
 
-      {/* כפתור לוח תוצאות גלובלי - תמיד זמין כל עוד אנחנו לא בתוך הלוח עצמו */}
       {uiState !== 'leaderboard' && (
         <button
           onClick={openLeaderboard}
-          className="absolute top-4 left-4 z-50 group flex flex-col items-center justify-center p-2 bg-pink-900/30 border-2 border-pink-500 rounded-lg shadow-[0_0_15px_#ec4899] hover:bg-pink-600 hover:text-white transition-all transform hover:scale-110"
+          className="absolute top-2 left-2 sm:top-4 sm:left-4 z-50 group flex flex-col items-center justify-center p-2 bg-pink-900/30 border-2 border-pink-500 rounded-lg shadow-[0_0_15px_#ec4899] hover:bg-pink-600 hover:text-white transition-all transform hover:scale-110"
         >
-          <Trophy size={26} className="text-yellow-400 group-hover:animate-bounce drop-shadow-[0_0_8px_rgba(250,204,21,1)]" />
-          <span className="text-[10px] mt-1 font-black text-pink-300 uppercase tracking-wider group-hover:text-white">לוח תוצאות</span>
+          <Trophy size={24} className="text-yellow-400 group-hover:animate-bounce drop-shadow-[0_0_8px_rgba(250,204,21,1)]" />
+          <span className="text-[9px] sm:text-[10px] mt-1 font-black text-pink-300 uppercase tracking-wider group-hover:text-white">לוח תוצאות</span>
         </button>
       )}
 
-      <div className="w-full max-w-[380px] flex justify-between items-center mb-4 px-2 z-10">
-        <div className="flex flex-col items-start">
-          <span className="text-green-500 text-xs font-bold tracking-widest uppercase mb-1">SCORE</span>
-          <span className="text-3xl font-black text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]">{displayScore}</span>
+      {uiState === 'playing' && (
+        <div className="w-full max-w-[380px] flex justify-between items-center mb-2 px-2 z-10">
+          <div className="flex flex-col items-start">
+            <span className="text-green-500 text-xs font-bold tracking-widest uppercase mb-1">SCORE</span>
+            <span className="text-2xl sm:text-3xl font-black text-yellow-400 drop-shadow-[0_0_8px_rgba(250,204,21,0.8)]">{displayScore}</span>
+          </div>
+          
+          <div className="flex space-x-1 space-x-reverse">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Heart key={i} size={20} className={i < displayLives ? 'text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'text-gray-800'} />
+            ))}
+          </div>
         </div>
-        
-        <div className="flex space-x-1 space-x-reverse">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Heart key={i} size={24} className={i < displayLives ? 'text-red-500 fill-red-500 drop-shadow-[0_0_8px_rgba(239,68,68,0.8)]' : 'text-gray-800'} />
-          ))}
-        </div>
-      </div>
+      )}
 
       <div className="relative rounded-lg overflow-hidden border-4 border-blue-600 shadow-[0_0_30px_rgba(37,99,235,0.4)] max-w-full z-10 bg-black">
         <canvas
           ref={canvasRef}
           width={BASE_MAP[0].length * TILE_SIZE}
           height={BASE_MAP.length * TILE_SIZE}
-          className="bg-black max-w-[100vw]"
+          className="bg-black max-w-[100vw] touch-none"
           onTouchStart={handleTouchStart}
           onTouchEnd={handleTouchEnd}
         />
 
         {uiState === 'menu' && (
-          <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-start p-6 text-center overflow-y-auto border-4 border-green-500 shadow-[inset_0_0_50px_rgba(34,197,94,0.2)]">
+          <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-start p-4 sm:p-6 text-center overflow-y-auto border-4 border-green-500 shadow-[inset_0_0_50px_rgba(34,197,94,0.2)]">
             
-            <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-2 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)] shrink-0 mt-2">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-1 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)] shrink-0 mt-14 sm:mt-2">
               INSERT WORDS
             </h1>
-            <p className="text-green-500 mb-4 text-xs tracking-widest uppercase shrink-0">הזינו מינימום 10 מילים לתרגול</p>
+            <p className="text-green-500 mb-3 text-[10px] sm:text-xs tracking-widest uppercase shrink-0">הזינו מינימום 10 מילים לתרגול</p>
             
             {setupError && (
-              <div className="bg-red-900/50 border-2 border-red-500 text-red-400 px-4 py-2 rounded-lg mb-4 shrink-0 shadow-[0_0_15px_rgba(239,68,68,0.5)] font-bold">
+              <div className="bg-red-900/50 border-2 border-red-500 text-red-400 px-3 py-2 rounded-lg mb-3 shrink-0 shadow-[0_0_15px_rgba(239,68,68,0.5)] font-bold text-xs sm:text-sm">
                 {setupError}
               </div>
             )}
 
-            <div className="w-full max-w-md bg-black rounded-xl p-4 mb-4 flex-1 overflow-y-auto min-h-[150px] border border-green-800 custom-scrollbar">
-              <div className="flex font-bold text-green-500 mb-2 px-2 pb-2 border-b border-green-800 text-sm tracking-widest uppercase">
+            <div className="w-full max-w-md bg-black rounded-xl p-2 sm:p-4 mb-3 flex-1 overflow-y-auto min-h-[100px] border border-green-800 custom-scrollbar">
+              <div className="flex font-bold text-green-500 mb-2 px-2 pb-2 border-b border-green-800 text-[10px] sm:text-sm tracking-widest uppercase">
                 <div className="flex-1 text-right">עברית</div>
                 <div className="flex-1 text-left">English</div>
-                <div className="w-8"></div>
+                <div className="w-6 sm:w-8"></div>
               </div>
               
               {customWords.map((word, index) => (
-                <div key={index} className="flex gap-2 mb-2 items-center">
+                <div key={index} className="flex gap-1 sm:gap-2 mb-2 items-center">
                   <input 
                     type="text"
                     placeholder="עברית..."
                     dir="rtl"
                     value={word.he}
                     onChange={(e) => handleWordChange(index, 'he', e.target.value)}
-                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-sm"
+                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-xs sm:text-sm"
                   />
                   <input 
                     type="text"
@@ -644,14 +663,14 @@ export default function App() {
                     dir="ltr"
                     value={word.en}
                     onChange={(e) => handleWordChange(index, 'en', e.target.value)}
-                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-sm uppercase"
+                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-xs sm:text-sm uppercase"
                   />
                   <button 
                     onClick={() => removeWordRow(index)}
                     disabled={customWords.length <= 10}
-                    className={`p-2 rounded transition ${customWords.length <= 10 ? 'text-gray-800 cursor-not-allowed' : 'text-red-500 hover:text-red-400 hover:drop-shadow-[0_0_8px_rgba(239,68,68,1)]'}`}
+                    className={`p-1 sm:p-2 rounded transition ${customWords.length <= 10 ? 'text-gray-800 cursor-not-allowed' : 'text-red-500 hover:text-red-400 hover:drop-shadow-[0_0_8px_rgba(239,68,68,1)]'}`}
                   >
-                    <Trash2 size={18} />
+                    <Trash2 size={16} />
                   </button>
                 </div>
               ))}
@@ -659,25 +678,25 @@ export default function App() {
               {customWords.length < 40 && (
                 <button 
                   onClick={addWordRow}
-                  className="w-full mt-4 py-2 flex items-center justify-center gap-2 text-green-500 hover:text-green-300 hover:border-green-400 rounded border border-dashed border-green-800 transition uppercase tracking-widest text-sm"
+                  className="w-full mt-3 py-2 flex items-center justify-center gap-2 text-green-500 hover:text-green-300 hover:border-green-400 rounded border border-dashed border-green-800 transition uppercase tracking-widest text-[10px] sm:text-sm"
                 >
-                  <Plus size={18} />
+                  <Plus size={16} />
                   <span>ADD WORD ({customWords.length}/40)</span>
                 </button>
               )}
             </div>
             
+            {/* כפתור מוקטן במובייל, גדול במסך רגיל */}
             <button 
               onClick={startGame}
-              className="shrink-0 bg-yellow-400 text-black text-xl font-black py-4 px-8 rounded-full hover:bg-yellow-300 transition shadow-[0_0_20px_rgba(250,204,21,0.8)] flex items-center gap-3 mb-2 uppercase tracking-widest animate-pulse hover:animate-none hover:scale-105"
+              className="shrink-0 bg-yellow-400 text-black text-lg md:text-xl font-black py-2 px-5 md:py-3 md:px-8 rounded-full hover:bg-yellow-300 transition shadow-[0_0_15px_rgba(250,204,21,0.8)] flex items-center gap-2 md:gap-3 mb-1 uppercase tracking-widest animate-pulse hover:animate-none hover:scale-105"
             >
-              <Gamepad2 size={28} />
+              <Gamepad2 size={24} className="md:w-7 md:h-7" />
               התחל משחק
             </button>
           </div>
         )}
 
-        {/* חלון טבלת מובילים */}
         {uiState === 'leaderboard' && (
           <div className="absolute inset-0 bg-black/95 flex flex-col items-center p-6 overflow-y-auto z-50 border-4 border-pink-600 shadow-[inset_0_0_50px_rgba(219,39,119,0.3)]">
             <div className="w-full flex justify-between items-center mb-6 border-b-2 border-pink-800 pb-4">
@@ -691,19 +710,19 @@ export default function App() {
               {leaderboard.length === 0 ? (
                 <div className="text-center text-pink-800 mt-10 animate-pulse">
                   <Trophy size={64} className="mx-auto mb-4" />
-                  <p className="tracking-widest uppercase">NO SCORES YET...</p>
+                  <p className="tracking-widest uppercase text-sm">NO SCORES YET...</p>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">
                   {leaderboard.map((entry, idx) => (
                     <div key={idx} className={`flex justify-between items-center p-3 border-l-4 ${idx === 0 ? 'bg-yellow-900/20 border-yellow-400 text-yellow-400' : idx === 1 ? 'bg-gray-800/50 border-gray-400 text-gray-300' : idx === 2 ? 'bg-orange-900/20 border-orange-500 text-orange-400' : 'bg-black border-green-800 text-green-500'}`}>
                       <div className="flex items-center gap-4">
-                        <span className="font-black text-xl w-6 text-center">
+                        <span className="font-black text-lg sm:text-xl w-6 text-center">
                           {idx + 1}
                         </span>
-                        <span className="font-bold uppercase tracking-wider">{entry.name}</span>
+                        <span className="font-bold uppercase tracking-wider text-sm sm:text-base">{entry.name}</span>
                       </div>
-                      <span className="font-black text-lg drop-shadow-md">{entry.score} PTS</span>
+                      <span className="font-black text-sm sm:text-lg drop-shadow-md">{entry.score} PTS</span>
                     </div>
                   ))}
                 </div>
@@ -713,16 +732,16 @@ export default function App() {
         )}
 
         {uiState === 'question' && currentQuestion && (
-          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-6 z-40">
-            <div className="bg-black border-4 border-yellow-400 rounded-none p-8 w-full max-w-sm text-center shadow-[0_0_40px_rgba(250,204,21,0.5)] animate-in zoom-in duration-200">
-              <h2 className="text-lg text-yellow-500 font-bold mb-2 tracking-widest uppercase">
+          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-4 sm:p-6 z-40">
+            <div className="bg-black border-4 border-yellow-400 rounded-none p-6 sm:p-8 w-full max-w-sm text-center shadow-[0_0_40px_rgba(250,204,21,0.5)] animate-in zoom-in duration-200">
+              <h2 className="text-sm sm:text-lg text-yellow-500 font-bold mb-2 tracking-widest uppercase">
                 {currentQuestion.isTranslatingToHebrew ? 'TRANSLATE TO HEBREW' : 'TRANSLATE TO ENGLISH'}
               </h2>
-              <div className="text-4xl md:text-5xl font-black text-white mb-8 select-none drop-shadow-[0_0_10px_#fff]" dir="ltr">
+              <div className="text-3xl sm:text-4xl md:text-5xl font-black text-white mb-6 sm:mb-8 select-none drop-shadow-[0_0_10px_#fff]" dir="ltr">
                 {currentQuestion.display}
               </div>
               
-              <form onSubmit={handleAnswerSubmit} className="flex flex-col gap-6">
+              <form onSubmit={handleAnswerSubmit} className="flex flex-col gap-4 sm:gap-6">
                 <input
                   type="text"
                   autoFocus
@@ -730,9 +749,9 @@ export default function App() {
                   value={userAnswer}
                   onChange={(e) => setUserAnswer(e.target.value)}
                   placeholder="הקלד/י כאן..."
-                  className="bg-gray-900 text-green-400 text-xl font-bold p-4 text-center outline-none border-2 border-green-500 focus:border-green-300 focus:shadow-[0_0_15px_rgba(74,222,128,0.6)] uppercase"
+                  className="bg-gray-900 text-green-400 text-lg sm:text-xl font-bold p-3 sm:p-4 text-center outline-none border-2 border-green-500 focus:border-green-300 focus:shadow-[0_0_15px_rgba(74,222,128,0.6)] uppercase"
                 />
-                <button type="submit" className="bg-green-600 text-black text-xl font-black py-4 hover:bg-green-400 transition shadow-[0_0_15px_rgba(34,197,94,0.6)] uppercase tracking-widest">
+                <button type="submit" className="bg-green-600 text-black text-lg sm:text-xl font-black py-3 sm:py-4 hover:bg-green-400 transition shadow-[0_0_15px_rgba(34,197,94,0.6)] uppercase tracking-widest">
                   בדוק תשובה
                 </button>
               </form>
@@ -743,63 +762,63 @@ export default function App() {
         {uiState === 'feedback' && (
           <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-50">
             {feedbackType === 'correct' ? (
-              <div className="text-green-500 text-[180px] font-black drop-shadow-[0_0_50px_rgba(34,197,94,1)] animate-bounce leading-none">
+              <div className="text-green-500 text-[120px] sm:text-[180px] font-black drop-shadow-[0_0_50px_rgba(34,197,94,1)] animate-bounce leading-none">
                 ✓
               </div>
             ) : (
-              <div className="text-red-600 text-[180px] font-black drop-shadow-[0_0_50px_rgba(220,38,38,1)] animate-pulse leading-none">
+              <div className="text-red-600 text-[120px] sm:text-[180px] font-black drop-shadow-[0_0_50px_rgba(220,38,38,1)] animate-pulse leading-none">
                 ✗
               </div>
             )}
-            <div className={`text-4xl font-black mt-4 uppercase tracking-widest ${feedbackType === 'correct' ? 'text-green-400 drop-shadow-[0_0_10px_#4ade80]' : 'text-red-500 drop-shadow-[0_0_10px_#ef4444]'}`}>
+            <div className={`text-3xl sm:text-4xl font-black mt-4 uppercase tracking-widest ${feedbackType === 'correct' ? 'text-green-400 drop-shadow-[0_0_10px_#4ade80]' : 'text-red-500 drop-shadow-[0_0_10px_#ef4444]'}`}>
               {feedbackType === 'correct' ? '+5 PTS' : '-3 PTS'}
             </div>
           </div>
         )}
 
         {(uiState === 'gameover' || uiState === 'won') && (
-          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-6 text-center z-40 overflow-y-auto border-4 border-red-600 shadow-[inset_0_0_50px_rgba(220,38,38,0.3)]">
+          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-4 sm:p-6 text-center z-40 overflow-y-auto border-4 border-red-600 shadow-[inset_0_0_50px_rgba(220,38,38,0.3)]">
             {uiState === 'won' ? (
-              <h1 className="text-4xl font-black text-yellow-400 mb-6 drop-shadow-[0_0_20px_#facc15] tracking-widest">STAGE CLEAR!</h1>
+              <h1 className="text-3xl sm:text-4xl font-black text-yellow-400 mb-4 sm:mb-6 drop-shadow-[0_0_20px_#facc15] tracking-widest">STAGE CLEAR!</h1>
             ) : (
-              <h1 className="text-5xl font-black text-red-600 mb-6 drop-shadow-[0_0_20px_#dc2626] tracking-widest uppercase">GAME OVER</h1>
+              <h1 className="text-4xl sm:text-5xl font-black text-red-600 mb-4 sm:mb-6 drop-shadow-[0_0_20px_#dc2626] tracking-widest uppercase">GAME OVER</h1>
             )}
             
-            <div className="text-xl text-green-500 mb-8 flex flex-col items-center shrink-0 uppercase tracking-widest">
+            <div className="text-lg sm:text-xl text-green-500 mb-6 sm:mb-8 flex flex-col items-center shrink-0 uppercase tracking-widest">
               FINAL SCORE
-              <span className="text-6xl font-black text-white mt-2 drop-shadow-[0_0_15px_#fff]">{displayScore}</span>
+              <span className="text-5xl sm:text-6xl font-black text-white mt-1 sm:mt-2 drop-shadow-[0_0_15px_#fff]">{displayScore}</span>
             </div>
 
             {db && (
-              <div className="w-full max-w-xs mb-8 bg-gray-900 p-6 border-2 border-blue-500 shrink-0 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
+              <div className="w-full max-w-xs mb-6 sm:mb-8 bg-gray-900 p-4 sm:p-6 border-2 border-blue-500 shrink-0 shadow-[0_0_20px_rgba(59,130,246,0.3)]">
                 {!hasSubmittedScore ? (
-                  <div className="flex flex-col gap-4">
-                    <p className="text-sm text-blue-400 font-bold uppercase tracking-widest">ENTER INITIALS:</p>
+                  <div className="flex flex-col gap-3 sm:gap-4">
+                    <p className="text-xs sm:text-sm text-blue-400 font-bold uppercase tracking-widest">ENTER INITIALS:</p>
                     <input 
                       type="text" 
                       placeholder="YOUR NAME"
                       maxLength="12"
                       value={playerName}
                       onChange={e => setPlayerName(e.target.value)}
-                      className="p-3 bg-black text-green-400 font-black text-xl text-center outline-none border-2 border-blue-600 focus:border-yellow-400 focus:shadow-[0_0_15px_#facc15] uppercase"
+                      className="p-2 sm:p-3 bg-black text-green-400 font-black text-lg sm:text-xl text-center outline-none border-2 border-blue-600 focus:border-yellow-400 focus:shadow-[0_0_15px_#facc15] uppercase"
                     />
                     <button 
                       onClick={handleSaveScore}
                       disabled={isSubmittingScore || !playerName.trim()}
-                      className="bg-blue-600 text-white py-3 font-black hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest shadow-[0_0_10px_#2563eb]"
+                      className="bg-blue-600 text-white py-2 sm:py-3 font-black hover:bg-blue-500 transition disabled:opacity-50 disabled:cursor-not-allowed uppercase tracking-widest shadow-[0_0_10px_#2563eb] text-sm sm:text-base"
                     >
                       {isSubmittingScore ? 'SAVING...' : 'SAVE SCORE'}
                     </button>
                   </div>
                 ) : (
-                  <div className="text-yellow-400 font-black text-xl py-4 uppercase tracking-widest drop-shadow-[0_0_10px_#facc15] animate-pulse">SCORE SAVED!</div>
+                  <div className="text-yellow-400 font-black text-lg sm:text-xl py-3 sm:py-4 uppercase tracking-widest drop-shadow-[0_0_10px_#facc15] animate-pulse">SCORE SAVED!</div>
                 )}
               </div>
             )}
             
             <button 
               onClick={() => setUiState('menu')}
-              className="bg-transparent text-green-400 font-black py-3 px-8 border-2 border-green-500 hover:bg-green-500 hover:text-black transition flex items-center gap-3 text-lg shrink-0 mb-4 uppercase tracking-widest shadow-[0_0_15px_rgba(34,197,94,0.4)]"
+              className="bg-transparent text-green-400 font-black py-2 sm:py-3 px-6 sm:px-8 border-2 border-green-500 hover:bg-green-500 hover:text-black transition flex items-center gap-2 sm:gap-3 text-base sm:text-lg shrink-0 mb-4 uppercase tracking-widest shadow-[0_0_15px_rgba(34,197,94,0.4)]"
             >
               <RefreshCcw size={20} />
               MAIN MENU
@@ -807,11 +826,26 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* ג'ויסטיק וירטואלי למובייל - מופיע רק בזמן משחק במסכים קטנים */}
+      {uiState === 'playing' && (
+        <div className="mt-4 md:hidden grid grid-cols-3 gap-2 z-10 w-48 touch-none">
+          <div />
+          <button onTouchStart={() => handleJoystick(0, -1)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowUp size={28} /></button>
+          <div />
+          <button onTouchStart={() => handleJoystick(-1, 0)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowLeft size={28} /></button>
+          <button onTouchStart={() => handleJoystick(0, 1)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowDown size={28} /></button>
+          <button onTouchStart={() => handleJoystick(1, 0)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowRight size={28} /></button>
+        </div>
+      )}
       
-      <div className="mt-6 text-green-800 text-xs font-bold flex gap-6 tracking-widest uppercase z-10">
-        <span>[ PC: ARROW KEYS ]</span>
-        <span>[ MOBILE: SWIPE ]</span>
-      </div>
+      {/* טקסט עזר במסכים גדולים */}
+      {uiState !== 'playing' && (
+         <div className="mt-6 hidden md:flex text-green-800 text-xs font-bold gap-6 tracking-widest uppercase z-10">
+           <span>[ PC: ARROW KEYS ]</span>
+           <span>[ MOBILE: D-PAD / SWIPE ]</span>
+         </div>
+      )}
 
     </div>
   );
