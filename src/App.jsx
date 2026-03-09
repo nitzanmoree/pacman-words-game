@@ -361,7 +361,6 @@ export default function App() {
         }
       }
 
-      // תזוזת הפקמן וטיפול עטיפה מדויק שמונע היתקעות בחור שחור
       pacman.x += pacman.dx * pacman.speed;
       pacman.y += pacman.dy * pacman.speed;
 
@@ -686,7 +685,6 @@ export default function App() {
               )}
             </div>
             
-            {/* כפתור מוקטן במובייל, גדול במסך רגיל */}
             <button 
               onClick={startGame}
               className="shrink-0 bg-yellow-400 text-black text-lg md:text-xl font-black py-2 px-5 md:py-3 md:px-8 rounded-full hover:bg-yellow-300 transition shadow-[0_0_15px_rgba(250,204,21,0.8)] flex items-center gap-2 md:gap-3 mb-1 uppercase tracking-widest animate-pulse hover:animate-none hover:scale-105"
@@ -827,15 +825,35 @@ export default function App() {
         )}
       </div>
 
-      {/* ג'ויסטיק וירטואלי למובייל - מופיע רק בזמן משחק במסכים קטנים */}
+      {/* ג'ויסטיק וירטואלי מבוסס על סגנון אטארי ישן למובייל */}
       {uiState === 'playing' && (
-        <div className="mt-4 md:hidden grid grid-cols-3 gap-2 z-10 w-48 touch-none">
-          <div />
-          <button onTouchStart={() => handleJoystick(0, -1)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowUp size={28} /></button>
-          <div />
-          <button onTouchStart={() => handleJoystick(-1, 0)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowLeft size={28} /></button>
-          <button onTouchStart={() => handleJoystick(0, 1)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowDown size={28} /></button>
-          <button onTouchStart={() => handleJoystick(1, 0)} className="bg-gray-900 p-3 sm:p-4 rounded-xl border-2 border-blue-600 active:bg-blue-600 active:border-white shadow-[0_0_15px_rgba(37,99,235,0.4)] flex justify-center text-blue-400 active:text-white transition-all"><ArrowRight size={28} /></button>
+        <div className="mt-4 md:hidden z-10 touch-none flex flex-col items-center pb-8">
+          <div dir="ltr" className="relative w-40 h-40 bg-gray-900 rounded-2xl border-[6px] border-black shadow-[0_10px_20px_rgba(0,0,0,0.8),inset_0_2px_10px_rgba(255,255,255,0.1)] p-2 grid grid-cols-3 grid-rows-3 gap-0 select-none">
+            
+            {/* הכפתור האדום הקלאסי בפינה */}
+            <div className="absolute -top-4 -left-4 w-12 h-12 bg-red-600 rounded-full border-4 border-red-900 shadow-[inset_-2px_-2px_6px_rgba(0,0,0,0.6),inset_2px_2px_6px_rgba(255,150,150,0.6),0_4px_8px_rgba(0,0,0,0.8)]"></div>
+
+            <div className="col-start-1 row-start-1"></div>
+            
+            <button onTouchStart={(e) => { e.preventDefault(); handleJoystick(0, -1); }} className="col-start-2 row-start-1 bg-gray-800 active:bg-gray-700 border-t-4 border-x-4 border-b-0 border-black rounded-t-lg shadow-[inset_0_4px_4px_rgba(255,255,255,0.1)] flex items-center justify-center text-gray-500 active:text-white transition-colors"><ArrowUp size={28} /></button>
+            
+            <div className="col-start-3 row-start-1"></div>
+            
+            <button onTouchStart={(e) => { e.preventDefault(); handleJoystick(-1, 0); }} className="col-start-1 row-start-2 bg-gray-800 active:bg-gray-700 border-l-4 border-y-4 border-r-0 border-black rounded-l-lg shadow-[inset_4px_0_4px_rgba(255,255,255,0.1)] flex items-center justify-center text-gray-500 active:text-white transition-colors"><ArrowLeft size={28} /></button>
+            
+            {/* מרכז הג'ויסטיק - ה"מוט" */}
+            <div className="col-start-2 row-start-2 bg-gray-800 border-4 border-black flex items-center justify-center">
+               <div className="w-8 h-8 bg-black rounded-full shadow-[inset_0_0_10px_rgba(255,255,255,0.2)]"></div>
+            </div>
+            
+            <button onTouchStart={(e) => { e.preventDefault(); handleJoystick(1, 0); }} className="col-start-3 row-start-2 bg-gray-800 active:bg-gray-700 border-r-4 border-y-4 border-l-0 border-black rounded-r-lg shadow-[inset_-4px_0_4px_rgba(0,0,0,0.3)] flex items-center justify-center text-gray-500 active:text-white transition-colors"><ArrowRight size={28} /></button>
+            
+            <div className="col-start-1 row-start-3"></div>
+            
+            <button onTouchStart={(e) => { e.preventDefault(); handleJoystick(0, 1); }} className="col-start-2 row-start-3 bg-gray-800 active:bg-gray-700 border-b-4 border-x-4 border-t-0 border-black rounded-b-lg shadow-[inset_0_-4px_4px_rgba(0,0,0,0.3)] flex items-center justify-center text-gray-500 active:text-white transition-colors"><ArrowDown size={28} /></button>
+            
+            <div className="col-start-3 row-start-3"></div>
+          </div>
         </div>
       )}
       
@@ -843,7 +861,7 @@ export default function App() {
       {uiState !== 'playing' && (
          <div className="mt-6 hidden md:flex text-green-800 text-xs font-bold gap-6 tracking-widest uppercase z-10">
            <span>[ PC: ARROW KEYS ]</span>
-           <span>[ MOBILE: D-PAD / SWIPE ]</span>
+           <span>[ MOBILE: ATARI JOYSTICK / SWIPE ]</span>
          </div>
       )}
 
