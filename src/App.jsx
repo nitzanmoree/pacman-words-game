@@ -65,6 +65,7 @@ const GHOST_SPEED = 2;
 export default function App() {
   const canvasRef = useRef(null);
   const [uiState, setUiState] = useState('menu'); 
+  const prevUiState = useRef('menu'); // שומר את המצב הקודם כדי לדעת לאן לחזור
   
   const [user, setUser] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
@@ -294,6 +295,20 @@ export default function App() {
       setUiState('gameover');
     } else {
       spawnEntities();
+    }
+  };
+
+  const openLeaderboard = () => {
+    prevUiState.current = uiState;
+    setUiState('leaderboard');
+  };
+
+  const closeLeaderboard = () => {
+    // אם נפסלנו או ניצחנו קודם, נחזור לתפריט, אחרת נחזור למצב הקודם (כמו השהייה)
+    if (prevUiState.current === 'gameover' || prevUiState.current === 'won') {
+      setUiState('menu');
+    } else {
+      setUiState(prevUiState.current);
     }
   };
 
@@ -558,6 +573,17 @@ export default function App() {
       {/* Scanline CRT overlay effect */}
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] z-50 opacity-40"></div>
 
+      {/* כפתור לוח תוצאות גלובלי - תמיד זמין כל עוד אנחנו לא בתוך הלוח עצמו */}
+      {uiState !== 'leaderboard' && (
+        <button
+          onClick={openLeaderboard}
+          className="absolute top-4 left-4 z-50 group flex flex-col items-center justify-center p-2 bg-pink-900/30 border-2 border-pink-500 rounded-lg shadow-[0_0_15px_#ec4899] hover:bg-pink-600 hover:text-white transition-all transform hover:scale-110"
+        >
+          <Trophy size={26} className="text-yellow-400 group-hover:animate-bounce drop-shadow-[0_0_8px_rgba(250,204,21,1)]" />
+          <span className="text-[10px] mt-1 font-black text-pink-300 uppercase tracking-wider group-hover:text-white">לוח תוצאות</span>
+        </button>
+      )}
+
       <div className="w-full max-w-[380px] flex justify-between items-center mb-4 px-2 z-10">
         <div className="flex flex-col items-start">
           <span className="text-green-500 text-xs font-bold tracking-widest uppercase mb-1">SCORE</span>
@@ -584,15 +610,6 @@ export default function App() {
         {uiState === 'menu' && (
           <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-start p-6 text-center overflow-y-auto border-4 border-green-500 shadow-[inset_0_0_50px_rgba(34,197,94,0.2)]">
             
-            {/* כפתור לוח תוצאות שובב באווירת ארקייד */}
-            <button 
-              onClick={() => setUiState('leaderboard')}
-              className="absolute top-4 left-4 group flex flex-col items-center justify-center p-2 bg-pink-900/30 border-2 border-pink-500 rounded-lg shadow-[0_0_15px_#ec4899] hover:bg-pink-600 hover:text-white transition-all transform hover:scale-110"
-            >
-              <Trophy size={26} className="text-yellow-400 group-hover:animate-bounce drop-shadow-[0_0_8px_rgba(250,204,21,1)]" />
-              <span className="text-[10px] mt-1 font-black text-pink-300 uppercase tracking-wider group-hover:text-white">לוח תוצאות</span>
-            </button>
-
             <h1 className="text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-2 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)] shrink-0 mt-2">
               INSERT WORDS
             </h1>
@@ -665,7 +682,7 @@ export default function App() {
           <div className="absolute inset-0 bg-black/95 flex flex-col items-center p-6 overflow-y-auto z-50 border-4 border-pink-600 shadow-[inset_0_0_50px_rgba(219,39,119,0.3)]">
             <div className="w-full flex justify-between items-center mb-6 border-b-2 border-pink-800 pb-4">
               <h2 className="text-2xl md:text-3xl font-black text-pink-500 drop-shadow-[0_0_10px_rgba(236,72,153,0.8)] tracking-widest">HIGH SCORES</h2>
-              <button onClick={() => setUiState('menu')} className="text-pink-500 hover:text-white hover:drop-shadow-[0_0_10px_#fff] transition p-2">
+              <button onClick={closeLeaderboard} className="text-pink-500 hover:text-white hover:drop-shadow-[0_0_10px_#fff] transition p-2">
                 <X size={32} />
               </button>
             </div>
