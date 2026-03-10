@@ -1,10 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Heart, Trophy, RefreshCcw, Plus, Trash2, Play, X, Gamepad2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Heart, Trophy, RefreshCcw, Plus, Trash2, Play, X, Gamepad2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, Lock, Save, LogOut } from 'lucide-react';
 import { initializeApp } from 'firebase/app';
 import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, collection, onSnapshot, setDoc, doc } from 'firebase/firestore';
 
-// אתחול Firebase למערכת טבלת המובילים (Leaderboard)
+// אתחול Firebase
 let app, auth, db, appId;
 try {
   const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
@@ -22,8 +22,16 @@ try {
   db = getFirestore(app);
   appId = typeof __app_id !== 'undefined' ? __app_id : 'pacman-words-app';
 } catch (e) {
-  console.log("Firebase setup warning: Please add configuration to share leaderboards online.", e);
+  console.log("Firebase setup warning:", e);
 }
+
+// מילות ברירת מחדל למקרה שאין עדיין מילים בענן
+const DEFAULT_VOCAB = [
+  { en: "cat", he: "חתול" }, { en: "dog", he: "כלב" }, { en: "sun", he: "שמש" },
+  { en: "moon", he: "ירח" }, { en: "water", he: "מים" }, { en: "fire", he: "אש" },
+  { en: "tree", he: "עץ" }, { en: "book", he: "ספר" }, { en: "car", he: "מכונית" },
+  { en: "house", he: "בית" }
+];
 
 const getTile = (mapArr, r, c) => {
   if (!mapArr || mapArr.length === 0) return 1;
@@ -62,19 +70,26 @@ const GHOST_SPEED = 2;
 
 export default function App() {
   const canvasRef = useRef(null);
-  const [uiState, setUiState] = useState('menu'); 
+  const [uiState, setUiState] = useState('menu'); // menu, playing, question, feedback, gameover, won, leaderboard, adminLogin, adminDashboard
   const prevUiState = useRef('menu'); 
   
   const [user, setUser] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
+  
+  // נתוני מילים גלובליים (מהענן) ומקומיים (לעריכת מנהל)
+  const [globalWords, setGlobalWords] = useState(DEFAULT_VOCAB);
+  const [customWords, setCustomWords] = useState([]);
+  
+  // ניהול התחברות מנהל
+  const [adminUser, setAdminUser] = useState('');
+  const [adminPass, setAdminPass] = useState('');
+  const [adminError, setAdminError] = useState('');
+  const [isSavingWords, setIsSavingWords] = useState(false);
+
+  // משתני משחק ושחקן
   const [playerName, setPlayerName] = useState('');
   const [isSubmittingScore, setIsSubmittingScore] = useState(false);
   const [hasSubmittedScore, setHasSubmittedScore] = useState(false);
-
-  const [customWords, setCustomWords] = useState(
-    Array.from({ length: 10 }, () => ({ en: '', he: '' }))
-  );
-  const [setupError, setSetupError] = useState('');
   
   const [displayScore, setDisplayScore] = useState(0);
   const [displayLives, setDisplayLives] = useState(5);
@@ -82,6 +97,7 @@ export default function App() {
   const [feedbackType, setFeedbackType] = useState(null);
   const [userAnswer, setUserAnswer] = useState('');
 
+  // אתחול Firebase Auth
   useEffect(() => {
     if (!auth) return;
     const initAuth = async () => {
@@ -96,47 +112,89 @@ export default function App() {
       }
     };
     initAuth();
-    
     const unsubscribe = onAuthStateChanged(auth, setUser);
     return () => unsubscribe();
   }, []);
 
+  // משיכת נתונים מהענן (לוח תוצאות + רשימת מילים)
   useEffect(() => {
     if (!user || !db) return;
-    const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
     
-    const unsubscribe = onSnapshot(scoresRef, (snapshot) => {
+    // האזנה לטבלת מובילים
+    const scoresRef = collection(db, 'artifacts', appId, 'public', 'data', 'leaderboard');
+    const unsubScores = onSnapshot(scoresRef, (snapshot) => {
       const data = snapshot.docs.map(doc => doc.data());
       data.sort((a, b) => b.score - a.score);
       setLeaderboard(data.slice(0, 15)); 
-    }, (error) => {
-      console.error("Error fetching leaderboard", error);
-    });
+    }, (error) => console.error("Error fetching leaderboard", error));
     
-    return () => unsubscribe();
+    // האזנה לרשימת המילים הגלובלית
+    const wordsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'wordsCollection', 'globalWordsDoc');
+    const unsubWords = onSnapshot(wordsDocRef, (docSnap) => {
+      if (docSnap.exists() && docSnap.data().words && docSnap.data().words.length > 0) {
+        setGlobalWords(docSnap.data().words);
+      } else {
+        setGlobalWords(DEFAULT_VOCAB); // גיבוי אם הענן ריק
+      }
+    }, (error) => console.error("Error fetching words", error));
+
+    return () => { unsubScores(); unsubWords(); };
   }, [user]);
+
+  // פונקציות ניהול (Admin)
+  const handleAdminLogin = (e) => {
+    e.preventDefault();
+    if (adminUser === 'shai' && adminPass === 'learnwords') {
+      setAdminError('');
+      setAdminUser('');
+      setAdminPass('');
+      // מאתחלים את מסך העריכה עם המילים הקיימות בענן
+      setCustomWords([...globalWords]);
+      setUiState('adminDashboard');
+    } else {
+      setAdminError('שם משתמש או סיסמא שגויים!');
+    }
+  };
 
   const handleWordChange = (index, field, value) => {
     const newWords = [...customWords];
     newWords[index][field] = value;
     setCustomWords(newWords);
-    setSetupError('');
   };
 
   const addWordRow = () => {
-    if (customWords.length < 40) {
-      setCustomWords([...customWords, { en: '', he: '' }]);
-    }
+    setCustomWords([...customWords, { en: '', he: '' }]);
   };
 
   const removeWordRow = (index) => {
-    if (customWords.length > 10) {
-      const newWords = [...customWords];
-      newWords.splice(index, 1);
-      setCustomWords(newWords);
-    }
+    const newWords = [...customWords];
+    newWords.splice(index, 1);
+    setCustomWords(newWords);
   };
 
+  const saveGlobalWords = async () => {
+    if (!db) return;
+    // סינון שורות ריקות
+    const validWords = customWords.filter(w => w.en.trim() !== '' && w.he.trim() !== '');
+    if (validWords.length < 10) {
+      setAdminError('יש להזין לפחות 10 מילים חוקיות.');
+      return;
+    }
+    
+    setIsSavingWords(true);
+    setAdminError('');
+    try {
+      const wordsDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'wordsCollection', 'globalWordsDoc');
+      await setDoc(wordsDocRef, { words: validWords });
+      setUiState('menu'); // חזרה למסך הראשי אחרי שמירה מוצלחת
+    } catch (e) {
+      console.error("Error saving words:", e);
+      setAdminError('שגיאה בשמירת המילים לענן.');
+    }
+    setIsSavingWords(false);
+  };
+
+  // מנוע המשחק
   const gameRef = useRef({
     map: [],
     pacman: { x: 0, y: 0, dx: 0, dy: 0, nextDx: 0, nextDy: 0, speed: PACMAN_SPEED, radius: 8 },
@@ -197,19 +255,17 @@ export default function App() {
   };
 
   const startGame = () => {
-    const validWords = customWords.filter(w => w.en.trim() !== '' && w.he.trim() !== '');
-    
-    if (validWords.length < 10) {
-      setSetupError('יש להזין לפחות 10 צמדי מילים (אנגלית ועברית) כדי להתחיל.');
-      return;
-    }
+    const validWords = globalWords.filter(w => w.en.trim() !== '' && w.he.trim() !== '');
+    if (validWords.length < 5) return; // הגנה בסיסית
 
-    let validCount = validWords.length;
-    gameRef.current.map = generateGameMap(validCount);
-    spawnEntities();
-    
+    // בחירה אקראית של 10 עד 15 מילים מתוך הרשימה המלאה
     let shuffledVocab = [...validWords].sort(() => Math.random() - 0.5);
-    gameRef.current.wordsRemaining = shuffledVocab;
+    let targetWordCount = Math.floor(Math.random() * 6) + 10; // 10, 11, 12, 13, 14, 15
+    let selectedWordsForRound = shuffledVocab.slice(0, Math.min(targetWordCount, validWords.length));
+
+    gameRef.current.map = generateGameMap(selectedWordsForRound.length);
+    spawnEntities();
+    gameRef.current.wordsRemaining = selectedWordsForRound;
     
     gameRef.current.score = 0;
     gameRef.current.lives = 5;
@@ -243,8 +299,8 @@ export default function App() {
     setUiState('question');
     let wordsArray = gameRef.current.wordsRemaining;
     if (wordsArray.length === 0) {
-      const validWords = customWords.filter(w => w.en.trim() !== '' && w.he.trim() !== '');
-      wordsArray = [...validWords].sort(() => Math.random() - 0.5);
+      // אם משום מה נגמרו, ניקח שוב אקראית מהמאגר של הסיבוב
+      wordsArray = [...globalWords].sort(() => Math.random() - 0.5).slice(0, 5);
       gameRef.current.wordsRemaining = wordsArray;
     }
     
@@ -552,7 +608,6 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [uiState]);
 
-  // פונקציית לחיצה לג'ויסטיק המובייל החדש
   const handleJoystick = (dx, dy) => {
     if (uiState !== 'playing') return;
     const p = gameRef.current.pacman;
@@ -560,7 +615,6 @@ export default function App() {
     p.nextDy = dy;
   };
 
-  // מנגנון ה-Swipe למובייל נשאר כגיבוי, אבל עכשיו זה בטוח ולא עושה ריפרש
   const touchStartRef = useRef(null);
   const handleTouchStart = (e) => {
     touchStartRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
@@ -584,12 +638,12 @@ export default function App() {
 
 
   return (
-    // תוספת ה-touch-none חשובה: היא מונעת מהדפדפן לעשות גלילה או Pull-to-refresh בזמן משחק
     <div dir="rtl" className={`min-h-screen bg-black flex flex-col items-center justify-center font-mono text-green-400 p-2 sm:p-4 relative overflow-hidden ${uiState === 'playing' ? 'touch-none' : ''}`}>
       
       {/* Scanline CRT overlay effect */}
       <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_4px,3px_100%] z-50 opacity-40"></div>
 
+      {/* כפתור לוח תוצאות */}
       {uiState !== 'leaderboard' && (
         <button
           onClick={openLeaderboard}
@@ -597,6 +651,17 @@ export default function App() {
         >
           <Trophy size={24} className="text-yellow-400 group-hover:animate-bounce drop-shadow-[0_0_8px_rgba(250,204,21,1)]" />
           <span className="text-[9px] sm:text-[10px] mt-1 font-black text-pink-300 uppercase tracking-wider group-hover:text-white">לוח תוצאות</span>
+        </button>
+      )}
+
+      {/* כפתור כניסת מנהל (מופיע רק בתפריט) */}
+      {uiState === 'menu' && (
+        <button
+          onClick={() => setUiState('adminLogin')}
+          className="absolute top-2 right-2 sm:top-4 sm:right-4 z-50 flex items-center justify-center p-2 text-gray-500 hover:text-green-400 transition-colors"
+          title="כניסת מנהל"
+        >
+          <Lock size={20} />
         </button>
       )}
 
@@ -625,64 +690,27 @@ export default function App() {
           onTouchEnd={handleTouchEnd}
         />
 
+        {/* מסך הפתיחה לשחקנים (צפייה במילים בלבד) */}
         {uiState === 'menu' && (
           <div className="absolute inset-0 bg-black/90 flex flex-col items-center justify-start p-4 sm:p-6 text-center overflow-y-auto border-4 border-green-500 shadow-[inset_0_0_50px_rgba(34,197,94,0.2)]">
             
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-yellow-200 mb-1 drop-shadow-[0_0_15px_rgba(250,204,21,0.8)] shrink-0 mt-14 sm:mt-2">
-              INSERT WORDS
+              LEARN & PLAY
             </h1>
-            <p className="text-green-500 mb-3 text-[10px] sm:text-xs tracking-widest uppercase shrink-0">הזינו מינימום 10 מילים לתרגול</p>
-            
-            {setupError && (
-              <div className="bg-red-900/50 border-2 border-red-500 text-red-400 px-3 py-2 rounded-lg mb-3 shrink-0 shadow-[0_0_15px_rgba(239,68,68,0.5)] font-bold text-xs sm:text-sm">
-                {setupError}
-              </div>
-            )}
+            <p className="text-green-500 mb-3 text-[10px] sm:text-xs tracking-widest uppercase shrink-0">עברו על המילים לפני שמתחילים</p>
 
             <div className="w-full max-w-md bg-black rounded-xl p-2 sm:p-4 mb-3 flex-1 overflow-y-auto min-h-[100px] border border-green-800 custom-scrollbar">
               <div className="flex font-bold text-green-500 mb-2 px-2 pb-2 border-b border-green-800 text-[10px] sm:text-sm tracking-widest uppercase">
                 <div className="flex-1 text-right">עברית</div>
                 <div className="flex-1 text-left">English</div>
-                <div className="w-6 sm:w-8"></div>
               </div>
               
-              {customWords.map((word, index) => (
-                <div key={index} className="flex gap-1 sm:gap-2 mb-2 items-center">
-                  <input 
-                    type="text"
-                    placeholder="עברית..."
-                    dir="rtl"
-                    value={word.he}
-                    onChange={(e) => handleWordChange(index, 'he', e.target.value)}
-                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-xs sm:text-sm"
-                  />
-                  <input 
-                    type="text"
-                    placeholder="ENGLISH..."
-                    dir="ltr"
-                    value={word.en}
-                    onChange={(e) => handleWordChange(index, 'en', e.target.value)}
-                    className="flex-1 bg-gray-900 text-green-400 p-2 rounded border border-green-800 focus:border-green-400 focus:shadow-[0_0_10px_rgba(74,222,128,0.5)] outline-none w-full text-xs sm:text-sm uppercase"
-                  />
-                  <button 
-                    onClick={() => removeWordRow(index)}
-                    disabled={customWords.length <= 10}
-                    className={`p-1 sm:p-2 rounded transition ${customWords.length <= 10 ? 'text-gray-800 cursor-not-allowed' : 'text-red-500 hover:text-red-400 hover:drop-shadow-[0_0_8px_rgba(239,68,68,1)]'}`}
-                  >
-                    <Trash2 size={16} />
-                  </button>
+              {globalWords.map((word, index) => (
+                <div key={index} className="flex gap-2 mb-2 items-center px-2 py-1 bg-gray-900/50 rounded border border-gray-800">
+                  <div className="flex-1 text-right text-green-400 font-bold text-sm sm:text-base">{word.he}</div>
+                  <div className="flex-1 text-left text-yellow-400 font-bold text-sm sm:text-base uppercase">{word.en}</div>
                 </div>
               ))}
-
-              {customWords.length < 40 && (
-                <button 
-                  onClick={addWordRow}
-                  className="w-full mt-3 py-2 flex items-center justify-center gap-2 text-green-500 hover:text-green-300 hover:border-green-400 rounded border border-dashed border-green-800 transition uppercase tracking-widest text-[10px] sm:text-sm"
-                >
-                  <Plus size={16} />
-                  <span>ADD WORD ({customWords.length}/40)</span>
-                </button>
-              )}
             </div>
             
             <button 
@@ -695,6 +723,103 @@ export default function App() {
           </div>
         )}
 
+        {/* מסך התחברות מנהל */}
+        {uiState === 'adminLogin' && (
+          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-6 z-40 border-4 border-blue-500 shadow-[inset_0_0_50px_rgba(59,130,246,0.2)]">
+            <button onClick={() => setUiState('menu')} className="absolute top-4 left-4 text-gray-500 hover:text-white transition p-2"><X size={32} /></button>
+            <div className="bg-gray-900 border-2 border-blue-500 p-8 rounded-lg max-w-sm w-full text-center shadow-[0_0_30px_rgba(59,130,246,0.3)]">
+              <Lock size={48} className="text-blue-400 mx-auto mb-4 drop-shadow-[0_0_10px_#60a5fa]" />
+              <h2 className="text-xl font-black text-white mb-6 tracking-widest uppercase">כניסת מנהל</h2>
+              
+              <form onSubmit={handleAdminLogin} className="flex flex-col gap-4">
+                <input
+                  type="text"
+                  placeholder="שם משתמש"
+                  value={adminUser}
+                  onChange={(e) => setAdminUser(e.target.value)}
+                  className="bg-black text-blue-300 font-bold p-3 text-center outline-none border border-blue-800 focus:border-blue-400"
+                  dir="ltr"
+                />
+                <input
+                  type="password"
+                  placeholder="סיסמא"
+                  value={adminPass}
+                  onChange={(e) => setAdminPass(e.target.value)}
+                  className="bg-black text-blue-300 font-bold p-3 text-center outline-none border border-blue-800 focus:border-blue-400"
+                  dir="ltr"
+                />
+                {adminError && <div className="text-red-500 text-sm font-bold drop-shadow-[0_0_5px_red]">{adminError}</div>}
+                <button type="submit" className="mt-2 bg-blue-600 text-white font-black py-3 hover:bg-blue-500 transition shadow-[0_0_15px_rgba(37,99,235,0.6)] uppercase tracking-widest">
+                  התחבר
+                </button>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* מסך עריכת מילים (מנהל) */}
+        {uiState === 'adminDashboard' && (
+          <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-start p-4 sm:p-6 text-center overflow-y-auto border-4 border-purple-500 shadow-[inset_0_0_50px_rgba(168,85,247,0.2)] z-40">
+            <div className="w-full flex justify-between items-center mb-4 border-b border-purple-800 pb-2">
+              <h1 className="text-xl sm:text-2xl font-black text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.8)] tracking-widest uppercase">
+                ניהול מילים
+              </h1>
+              <button onClick={() => setUiState('menu')} className="text-purple-500 hover:text-white transition flex items-center gap-1 text-sm font-bold">
+                <LogOut size={16} /> יציאה
+              </button>
+            </div>
+            
+            <p className="text-gray-400 mb-3 text-[10px] sm:text-xs tracking-widest uppercase shrink-0">המילים נשמרות לענן וזמינות לכל השחקנים</p>
+            {adminError && <div className="bg-red-900/50 border border-red-500 text-red-400 px-3 py-1 rounded mb-3 text-xs">{adminError}</div>}
+
+            <div className="w-full max-w-md bg-gray-900 rounded-lg p-2 sm:p-4 mb-3 flex-1 overflow-y-auto min-h-[100px] border border-purple-800 custom-scrollbar">
+              {customWords.map((word, index) => (
+                <div key={index} className="flex gap-1 sm:gap-2 mb-2 items-center">
+                  <input 
+                    type="text"
+                    placeholder="עברית..."
+                    dir="rtl"
+                    value={word.he}
+                    onChange={(e) => handleWordChange(index, 'he', e.target.value)}
+                    className="flex-1 bg-black text-white p-2 border border-purple-900 focus:border-purple-400 outline-none w-full text-xs sm:text-sm"
+                  />
+                  <input 
+                    type="text"
+                    placeholder="ENGLISH..."
+                    dir="ltr"
+                    value={word.en}
+                    onChange={(e) => handleWordChange(index, 'en', e.target.value)}
+                    className="flex-1 bg-black text-white p-2 border border-purple-900 focus:border-purple-400 outline-none w-full text-xs sm:text-sm uppercase"
+                  />
+                  <button 
+                    onClick={() => removeWordRow(index)}
+                    className="p-1 sm:p-2 text-red-500 hover:text-red-400 hover:drop-shadow-[0_0_8px_rgba(239,68,68,1)] transition"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              ))}
+
+              <button 
+                onClick={addWordRow}
+                className="w-full mt-3 py-2 flex items-center justify-center gap-2 text-purple-400 hover:text-purple-300 border border-dashed border-purple-800 transition uppercase tracking-widest text-[10px] sm:text-sm"
+              >
+                <Plus size={16} /> הוסף שורה
+              </button>
+            </div>
+            
+            <button 
+              onClick={saveGlobalWords}
+              disabled={isSavingWords}
+              className="shrink-0 bg-purple-600 text-white text-lg font-black py-3 px-8 rounded-lg hover:bg-purple-500 transition shadow-[0_0_15px_rgba(168,85,247,0.6)] flex items-center gap-2 mb-1 uppercase tracking-widest disabled:opacity-50"
+            >
+              <Save size={20} />
+              {isSavingWords ? 'שומר לענן...' : 'שמור מילים'}
+            </button>
+          </div>
+        )}
+
+        {/* חלון טבלת מובילים */}
         {uiState === 'leaderboard' && (
           <div className="absolute inset-0 bg-black/95 flex flex-col items-center p-6 overflow-y-auto z-50 border-4 border-pink-600 shadow-[inset_0_0_50px_rgba(219,39,119,0.3)]">
             <div className="w-full flex justify-between items-center mb-6 border-b-2 border-pink-800 pb-4">
@@ -729,6 +854,7 @@ export default function App() {
           </div>
         )}
 
+        {/* שאר חלקי המשחק... (שאלות, פידבק, מסך סיום) */}
         {uiState === 'question' && currentQuestion && (
           <div className="absolute inset-0 bg-black/95 flex flex-col items-center justify-center p-4 sm:p-6 z-40">
             <div className="bg-black border-4 border-yellow-400 rounded-none p-6 sm:p-8 w-full max-w-sm text-center shadow-[0_0_40px_rgba(250,204,21,0.5)] animate-in zoom-in duration-200">
