@@ -258,10 +258,15 @@ export default function App() {
     const validWords = globalWords.filter(w => w.en.trim() !== '' && w.he.trim() !== '');
     if (validWords.length < 5) return; // הגנה בסיסית
 
-    // בחירה אקראית של 10 עד 15 מילים מתוך הרשימה המלאה
-    let shuffledVocab = [...validWords].sort(() => Math.random() - 0.5);
+    // יצירת מאגר שבו כל מילה קיימת פעמיים לכל היותר
+    let pool = [...validWords, ...validWords];
+    pool.sort(() => Math.random() - 0.5);
+
+    // בחירת 10 עד 15 מילים
     let targetWordCount = Math.floor(Math.random() * 6) + 10; // 10, 11, 12, 13, 14, 15
-    let selectedWordsForRound = shuffledVocab.slice(0, Math.min(targetWordCount, validWords.length));
+    targetWordCount = Math.min(targetWordCount, pool.length);
+
+    let selectedWordsForRound = pool.slice(0, targetWordCount);
 
     gameRef.current.map = generateGameMap(selectedWordsForRound.length);
     spawnEntities();
@@ -326,7 +331,12 @@ export default function App() {
       gameRef.current.score += 5;
       gameRef.current.vulnerableTimer = 7000;
       setFeedbackType('correct');
-      gameRef.current.wordsRemaining = gameRef.current.wordsRemaining.filter(w => w !== currentQuestion.word);
+      
+      // הסרת מופע *אחד* של המילה כדי שאם היא נבחרה פעמיים היא תישאר לפעם הבאה
+      const wordIndex = gameRef.current.wordsRemaining.findIndex(w => w === currentQuestion.word);
+      if (wordIndex > -1) {
+        gameRef.current.wordsRemaining.splice(wordIndex, 1);
+      }
     } else {
       gameRef.current.score -= 3;
       setFeedbackType('incorrect');
